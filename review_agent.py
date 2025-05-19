@@ -1,6 +1,6 @@
 import os
 from dotenv import load_dotenv
-from openai_agents import AssistantAgent
+from agents import AssistantAgent
 from openai import OpenAI
 from tools import fetch_pr_files, post_inline_comments
 
