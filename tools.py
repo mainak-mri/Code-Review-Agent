@@ -1,6 +1,6 @@
 import os
 import httpx
-from openai import tool
+from agents import function_tool
 
 TOKEN_GITHUB = os.getenv("TOKEN_GITHUB")
 REPO = os.getenv("GITHUB_REPO")
@@ -11,7 +11,7 @@ HEADERS = {
     "Accept": "application/vnd.github+json"
 }
 
-@tool
+@function_tool
 def fetch_pr_files() -> list:
     """
     Fetch changed files and their patch from the PR.
@@ -22,7 +22,7 @@ def fetch_pr_files() -> list:
     files = r.json()
     return [{"filename": f["filename"], "patch": f.get("patch", "")} for f in files if f.get("patch")]
 
-@tool
+@function_tool
 def post_inline_comments(comments: list) -> str:
     """
     Post multiple inline comments to a PR as a GitHub review.
