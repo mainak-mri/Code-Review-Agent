@@ -1,8 +1,7 @@
 
 import os
 from dotenv import load_dotenv
-from openai.agents import Agent, Runner
-# Import the tool functions from your tools.py
+from agents import Agent, Runner
 from tools import fetch_pr_files, post_inline_comments
 
 load_dotenv()
