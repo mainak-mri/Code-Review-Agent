@@ -1,190 +1,62 @@
 import os
-import re
-import json
 from dotenv import load_dotenv
-from typing import List, Dict, Any
-from typing_extensions import TypedDict
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_core.messages import HumanMessage
-from langchain_core.tools import tool as langchain_tool 
-from langchain_core.runnables import Runnable
-from langgraph.graph import StateGraph, END
-from tools import fetch_pr_files, post_inline_comments,Comment
+from langgraph.graph import MessageGraph
+from langgraph.prebuilt import create_react_agent
+from tools import fetch_pr_files, post_inline_comments
+
+def load_standards(file_name: str) -> str:
+    try:
+        with open(file_name, "r", encoding="utf-8") as f:
+            return f.read()
+    except Exception:
+        return ""
+
+clean_code = load_standards("clean_code_standards.md")
+angular_code = load_standards("angular_code_standards.md")
+csharp_code = load_standards("csharp_code_standards.md")
+combined_standards = f"{clean_code}\n\n{angular_code}\n\n{csharp_code}"
 
 load_dotenv()
-
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 llm = ChatGoogleGenerativeAI(
-    model="gemini-1.5-flash",
-    google_api_key=GEMINI_API_KEY,
-    temperature=0.1
+    model="gemini-2.0-flash",
+    temperature=0.1,
+    google_api_key=GEMINI_API_KEY
 )
 
-llm_tools = [post_inline_comments]
-llm_with_tools = llm.bind_tools(llm_tools)
-
-class GraphState(TypedDict):
-    """
-    Represents the state of our graph.
-
-    Attributes:
-        files: List of dictionaries containing filename and patch.
-        comments: List of dictionaries containing path, line, and body for comments.
-        error: Any error message encountered during the process.
-    """
-    files: List[Dict[str, str]]
-    comments: List[Comment] # Use the Comment type imported from tools
-    error: str
-
-def fetch_files_node(state: GraphState) -> Dict[str, Any]:
-    """
-    Node to fetch PR files using the fetch_pr_files tool.
-    """
-    print("---Fetching PR files---")
-    try:
-        files = fetch_pr_files.invoke({})
-        if not files:
-            print("Failed to fetch PR files or no patch files found.")
-            return {"files": [], "error": "Failed to fetch PR files or no patch files found."}
-        print(f"Fetched {len(files)} files with patches.")
-        return {"files": files, "error": ""} # Update state with fetched files
-    except Exception as e:
-        print(f"Error in fetch_files_node: {e}")
-        return {"files": [], "error": f"Error fetching files: {e}"}
-
-
-def review_code_node(state: GraphState) -> Dict[str, Any]:
-    """
-    Node to review the fetched code patches using the Gemini model
-    and generate comments in the required format by implicitly using the tool schema.
-    """
-    print("---Reviewing code and generating comments---")
-    files = state.get("files", [])
-    if not files:
-        print("No files to review.")
-        return {"comments": [], "error": state.get("error", "No files to review.")}
-    try:
-        with open("clean_code_standards.md", "r", encoding="utf-8") as f:
-            clean_code_standards = f.read()
-    except Exception:
-        clean_code_standards = ""
-
-    try:
-        with open("angular_code_standards.md", "r", encoding="utf-8") as f:
-            angular_code_standards = f.read()
-    except Exception:
-        angular_code_standards = ""
-
-    try:
-        with open("csharp_code_standards.md", "r", encoding="utf-8") as f:
-            csharp_code_standards = f.read()
-    except Exception:
-        csharp_code_standards = ""
-
-    prompt_content = f"""
-    You are a senior software engineer and an expert code reviewer.
-    Your team follows these code standards (enforced strictly in every review):
-    For clean code standards - {clean_code_standards}, for angular code - {angular_code_standards}, for C# code - {csharp_code_standards}
-    Analyze the provided PR patch data and suggest specific, actionable improvements.
-    Focus on important issues like potential bugs, performance problems, security vulnerabilities,
-    design flaws, and significant code smells. Avoid nitpicks.
-    Keep optimization in mind and methods should always be trying to get, update or delete in bulk wherever possible.
-    For each comment you generate, provide the filename, the exact line number the comment applies to
-    within the patch, and the comment body. The line number should correspond to the line in the *new* file
-    after the changes.
-
-    Your response MUST be a JSON array of comment objects, exactly matching the structure required by the `post_inline_comments` tool.
-    Do NOT include any other text or formatting outside the JSON array.
-
-    Here is the PR patch data:
-    """
-    for file_data in files:
-        prompt_content += f"\n\n--- File: {file_data['filename']} ---\n"
-        prompt_content += file_data['patch']
-
-    messages = [
-        HumanMessage(content=prompt_content)
-    ]
-    try:
-        response = llm_with_tools.invoke(messages)
-        print("Raw model response content:", response.content)
-        content = response.content.strip()
-        content = re.sub(r"^```json|^```|```$", "", content, flags=re.MULTILINE).strip()
-        try:
-            parsed = json.loads(content)
-        except json.JSONDecodeError as e:
-            print(f"Error parsing model response as JSON: {e}")
-            return {"comments": [], "error": "Model response is not valid JSON."}
-        valid_comments = []
-        for comment in parsed:
-            if isinstance(comment, dict) and 'path' in comment and 'line' in comment and 'body' in comment:
-                if isinstance(comment['line'], int):
-                    valid_comments.append(comment)
-                else:
-                    print(f"Skipping comment with invalid line type: {comment}")
-            else:
-                print(f"Skipping invalid comment format: {comment}")
-
-        print(f"Generated {len(valid_comments)} valid comments.")
-        return {"comments": valid_comments, "error": ""}
-
-    except Exception as e:
-        print(f"Error during code review with Gemini model: {e}")
-        return {"comments": [], "error": f"Error during code review: {e}"}
-
-
-def post_comments_node(state: GraphState) -> Dict[str, Any]:
-    """
-    Node to post the generated comments using the post_inline_comments tool.
-    """
-    print("---Posting comments to GitHub---")
-    comments = state.get("comments", [])
-    if not comments:
-        print("No comments to post.")
-        return {"error": ""}
-
-    try:
-        result = post_inline_comments.invoke({"comments": comments})
-        print(f"Posting result: {result}")
-        return {"error": result if "Failed" in result else ""}
-    except Exception as e:
-        print(f"Error in post_comments_node: {e}")
-        return {"error": f"Error posting comments: {e}"}
-
-workflow = StateGraph(GraphState)
-
-workflow.add_node("fetch_files", fetch_files_node)
-workflow.add_node("review_code", review_code_node)
-workflow.add_node("post_comments", post_comments_node)
-workflow.set_entry_point("fetch_files")
-workflow.add_edge("fetch_files", "review_code")
-
-workflow.add_conditional_edges(
-    "review_code",
-    lambda state: "post_comments" if state.get("comments") and not state.get("error") else END,
-    {"post_comments": "post_comments", END: END}
-)
-
-workflow.add_edge("post_comments", END)
-
-app = workflow.compile()
+tools = [fetch_pr_files, post_inline_comments]
+agent_node = create_react_agent(model=llm, tools=tools)
 
 if __name__ == "__main__":
-    print("Starting LangGraph Code Review Workflow...")
+    print("🚀 Starting PR review agent...")
 
-    initial_state: GraphState = {"files": [], "comments": [], "error": ""}
+    user_instruction = f"""
+        You are a senior software engineer and an expert code reviewer.
 
-    final_state = app.invoke(initial_state)
+        You must:
+        1. Call `fetch_pr_files` to get the PR diff.
+        2. Review the patch using the following code standards:
+        {combined_standards}
+        3. Call `post_inline_comments` with actionable review suggestions. Make sure the line number matches with the code review you are doing. It should not be such that you are referrring to a method and that method doesn't exist in the line number.
+        4. Analyze the provided PR patch data and suggest specific, actionable improvements.
+        5. ONLY comment on added lines (those that begin with `+` in unified diff).
+        6. Focus on important issues like potential bugs, performance problems, security vulnerabilities, design flaws, spelling errors and significant code smells. Avoid nitpicks.
+        7. Keep optimization in mind and methods should always be trying to get, update or delete in bulk wherever possible.
+        8. The line number should correspond to the line in the *new* file
+        after the changes. Do not comment on removed lines (`-`) or unchanged lines.
+        9. Do NOT add nitpicks — focus on actual issues.
+        Only use the provided tools. Do not reply with plain text explanations.
+        10. When suggesting comments, ensure the "line" field refers to the line number in the new file after the patch is applied. Do not use line numbers from the diff header or the old file.
+        11. IMPORTANT: After you have posted all necessary comments using post_inline_comments, STOP and do not call any more tools.
+        You must only call fetch_pr_files once per review session.
+        12. Ignore Comments and doc files. Review only necessary codes and not all the files necessarily.
+        """
 
-    print("\n--- Workflow Finished ---")
-    print("Final State:")
-    print(final_state)
-
-    if final_state.get("error"):
-        print(f"\nWorkflow completed with error: {final_state['error']}")
-    elif final_state.get("comments"):
-        print(f"\nSuccessfully processed and potentially posted {len(final_state['comments'])} comments.")
-    else:
-         print("\nWorkflow completed without generating or posting comments.")
-
+    result = agent_node.invoke({
+    "messages": [
+        {"role": "user", "content": user_instruction}
+        ]   
+    })
+    print("\n✅ Review completed.")
