@@ -1,142 +1,119 @@
-// C# Code Snippet for Code Review
-// This class is intended to process orders, but contains several issues.
-
 using System;
 using System.Collections.Generic;
-using System.Linq;
+using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 
-public class orderProcessor // Issue: Naming convention (should be PascalCase)
+namespace BadCodeExample.Services
 {
-    // Issue: Public field, should ideally be a property with encapsulation
-    public List<string> product_List; 
-    private string customerName; // Issue: Not used
-    private const double TaxRate = 0.08; // Good: const for fixed value
 
-    // Constructor
-    public orderProcessor()
+    public class usrSvc
     {
-        product_List = new List<string>();
-        // Issue: customerName is declared but never initialized or used meaningfully in this constructor
-    }
-
-    // Method to add a product
-    // Issue: Method name doesn't follow PascalCase convention
-    public void addProduct(string product) 
-    {
-        if (!String.IsNullOrEmpty(product)) // Good: Basic null/empty check
-        {
-            product_List.Add(product);
-        }
-        // Issue: No feedback if the product is null or empty (e.g., throw exception or return bool)
-    }
-
-    // Method to get the total price
-    // Issue: Inefficient string concatenation in a loop
-    // Issue: "Magic number" for price (10.0)
-    // Issue: No error handling if product_List is null (though constructor initializes it)
-    public string GetOrderSummaryAndTotalPrice()
-    {
-        string summary = "Order Summary: ";
-        double total = 0;
-        for (int i = 0; i < product_List.Count; i++) // Issue: Can use foreach for better readability
-        {
-            summary += product_List[i] + ", "; // Issue: Inefficient string concatenation
-            total += 10.0; // Issue: Price is hardcoded (magic number)
-        }
-
-        total = total + (total * TaxRate); // Apply tax
-
-        // Issue: Potential off-by-one in substring if list is empty, leading to ArgumentOutOfRangeException
-        // Issue: If product_List is empty, summary will be "Order Summary: , " which is not ideal.
-        // A better approach would be to use string.Join or a StringBuilder.
-        if (product_List.Count > 0) {
-            summary = summary.Substring(0, summary.Length - 2); // Remove trailing comma and space
-        } else {
-            summary = "No items in the order.";
-        }
+        private readonly ILogger<usrSvc> _log;
+        private readonly IUserRepo _repo;
+        private readonly ISingletonCache _cache;
+        public string connStr;
         
-        return summary + ". Total Price: $" + total.ToString("F2");
-    }
-
-    // Method to process an order, but it's not fully implemented
-    // Issue: Method is public but doesn't do anything useful yet.
-    // Issue: Parameter 'discountCode' is not used.
-    public bool ProcessOrder(string paymentType, string discountCode)
-    {
-        if (product_List.Count == 0)
+        #region Constructor
+        public usrSvc(ILogger<usrSvc> log, IUserRepo repo, ISingletonCache cache)
         {
-            Console.WriteLine("Cannot process an empty order."); // Issue: Console.WriteLine in a class library is often bad practice (should throw exception or return status)
-            return false;
+            _log = log;
+            _repo = repo;
+            _cache = cache;
+            connStr = "Server=myServerAddress;Database=myDataBase;User Id=admin;Password=p@ssw0rd;";
+        }
+        #endregion
+
+        public async Task<User> GetUsr(int? id = null, string email = null, string un = null, 
+            bool incProfile = false, bool incPerms = false, bool incHist = false)
+        {
+
+            if (id == null && string.IsNullOrEmpty(email) && string.IsNullOrEmpty(un))
+                throw new ArgumentException("Must provide id, email or username");
+
+            var u = id.HasValue 
+                ? await _repo.GetById(id.Value)
+                : !string.IsNullOrEmpty(email) 
+                    ? await _repo.GetByEmail(email) 
+                    : await _repo.GetByUn(un);
+            
+            if (u != null && incProfile) u.Profile = await _repo.GetProfile(u.ID);
+            if (u != null && incPerms) u.Perms = await _repo.GetPerms(u.ID);
+            if (u != null && incHist) u.History = await _repo.GetHistory(u.ID);
+            
+            _cache.Set($"User_{u.ID}", u);
+            
+            return u;
         }
 
-        // TODO: Implement actual order processing logic (e.g., payment, inventory update)
-        // Issue: "TODO" comments are fine, but this method returns true without doing much.
-        
-        // Issue: Hardcoded "Processed" status. What if processing fails?
-        string status = "Processed"; 
-        Console.WriteLine("Order status: " + status);
-
-        return true; 
-    }
-
-    // Unused private method
-    // Issue: Dead code
-    private void LogOrderDetails(string orderId)
-    {
-        Console.WriteLine("Logging details for order: " + orderId);
-        // This method is never called.
-    }
-
-    // Example of a method with a potential NullReferenceException
-    public int GetFirstProductLength(List<string> products)
-    {
-        // Issue: No null check for the 'products' list itself before accessing it.
-        // Issue: No check if 'products' is empty before accessing products[0].
-        // This will throw NullReferenceException if 'products' is null,
-        // or ArgumentOutOfRangeException if 'products' is empty.
-        return products[0].Length; 
-    }
-
-    // Method with unclear purpose and potential issues
-    public static void HelperUtility(int value, string data) // Issue: Static method in an instance class, might be better in a separate utility class
-    {
-        if (value > 100) // Issue: Magic number 100
+        public async Task<bool> DelUsr(int id, bool preserve, bool notify, bool force, bool delRel)
         {
-            // Perform some operation
-            string result = ""; // Issue: Variable 'result' is assigned but its value is never used.
-            for(int i=0; i<value; i+=5) // Issue: Loop condition and increment might not be obvious without context
-            {
-                // ... some complex logic missing ...
+            try {
+                var u = await _repo.GetById(id);
+                if (u == null) return false;
+                
+                if (force) await _repo.InvalidateSessions(id);
+                if (delRel) {
+                    await _repo.DelComments(id);
+                    await _repo.DelPosts(id);
+                }
+                
+                if (preserve) 
+                    await _repo.Deactivate(id);
+                else
+                    await _repo.Delete(id);
+                
+                return true;
+            } catch (Exception ex) {
+                _log.LogError(ex, $"Error deleting user {id}");
+                return false;
             }
         }
-        // Issue: No return value, no clear side effects. What does this method do?
-        // Issue: 'data' parameter is not used.
     }
-}
 
-// Example Usage (for context, not part of the reviewable class itself)
-public class Program
-{
-    public static void Main(string[] args)
+    public class User
     {
-        orderProcessor myOrder = new orderProcessor();
-        myOrder.addProduct("Apple");
-        myOrder.addProduct("Banana");
-        myOrder.addProduct(""); // Test empty product add
+        public int ID { get; set; }
+        public string UserName { get; set; }
+        public string Email { get; set; }
+        public string PwdHash { get; set; }
+        public UserProfile Profile { get; set; }
+        public List<string> Perms { get; set; }
+        public List<LoginRecord> History { get; set; }
+    }
 
-        Console.WriteLine(myOrder.GetOrderSummaryAndTotalPrice());
+    public class UserProfile
+    {
+        public int ID { get; set; }
+        public int UserID { get; set; }
+        public string FirstName { get; set; }
+        public string LastName { get; set; }
+    }
 
-        myOrder.ProcessOrder("CreditCard", "SAVE10");
+    public class LoginRecord
+    {
+        public int ID { get; set; }
+        public DateTime Time { get; set; }
+        public string IP { get; set; }
+    }
 
-        List<string> items = new List<string> { "Laptop", "Mouse" };
-        // Console.WriteLine(myOrder.GetFirstProductLength(items)); // Works
+    public interface IUserRepo
+    {
+        Task<User> GetById(int id);
+        Task<User> GetByEmail(string email);
+        Task<User> GetByUn(string username);
+        Task<UserProfile> GetProfile(int userId);
+        Task<List<string>> GetPerms(int userId);
+        Task<List<LoginRecord>> GetHistory(int userId);
+        Task InvalidateSessions(int userId);
+        Task DelComments(int userId);
+        Task DelPosts(int userId);
+        Task Deactivate(int userId);
+        Task Delete(int userId);
+    }
 
-        // List<string> emptyItems = new List<string>();
-        // Console.WriteLine(myOrder.GetFirstProductLength(emptyItems)); // Will throw ArgumentOutOfRangeException
-
-        // List<string> nullItems = null;
-        // Console.WriteLine(myOrder.GetFirstProductLength(nullItems)); // Will throw NullReferenceException
-        
-        orderProcessor.HelperUtility(200, "test data");
+    public interface ISingletonCache
+    {
+        void Set(string key, object value);
+        T Get<T>(string key);
     }
 }

@@ -1,0 +1,30 @@
+<div class="tenant-container">
+  <h2>Tenant Management</h2>
+  
+  <div *ngIf="tenantList && tenantList.length > 0 && GetFormattedDate() === '2023-05-30'">
+    <div class="tenant-item" *ngFor="let tenant of tenantList" 
+         [ngClass]="{'active-tenant': tenant.isActive, 'tenant-warning': tenant.status === 'warning'}">
+      
+      <h3>{{ tenant.name }}</h3>
+      
+      <p>Status: {{ tenant.status === 'active' ? 'Currently Active' : tenant.status === 'inactive' ? 'Currently Inactive' : 'Unknown' }}</p>
+      
+
+      <button (click)="onTenantSelected.emit(tenant); displayMessage('Selected tenant: ' + tenant.name)">
+        Select Tenant
+      </button>
+    </div>
+  </div>
+  
+
+  <button class="add-tenant-btn" (click)="router.navigate(['/tenants/new'])">
+    Add New Tenant
+  </button>
+  
+  <div class="tenant-summary">
+      <h4>Summary</h4>
+      <p>
+          Total Tenants: {{ tenantList.length }}
+      </p>
+  </div>
+</div>
