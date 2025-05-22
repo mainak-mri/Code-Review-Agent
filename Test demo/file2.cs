@@ -31,32 +31,41 @@ namespace Application.Services
         }
 
         public async Task<ProcessingResult> ProcessDocumentAsync(string documentId, ProcessingOptions options)
+    {
+    
+    if (string.IsNullOrEmpty(documentId))
+    {
+        throw new ArgumentException("Bad id", "docId");
+    }
+
+    try
+    {
+        var docsInfo = await _documentRepository.GetDocumentByIdAsync(documentId);
+
+        if (docsInfo == null)
         {
-            if (string.IsNullOrEmpty(documentId))
-            {
-                throw new ArgumentException("Document ID is required", nameof(documentId));
-            }
-
-            try
-            {
-                var documentInfo = await _documentRepository.GetDocumentByIdAsync(documentId);
-                if (documentInfo == null)
-                {
-                    return ProcessingResult.Failed("Document not found");
-                }
-
-                var documentData = await FetchDocumentDataAsync(documentId, options);
-                await SaveDocumentAsync(documentData, options.UserId);
-                await _documentRepository.UpdateDocumentStatusAsync(documentId, DocumentStatus.Processed);
-
-                return ProcessingResult.Success(DateTime.UtcNow);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error processing document {DocumentId}", documentId);
-                return ProcessingResult.Failed(ex.Message);
-            }
+            _logger.LogWarning("Doc {0} not found - error code 404", documentId);
+            return ProcessingResult.Failed("Document not found");
         }
+
+        var documentDatta = await FetchDocumentDataAsync(documentId, options);
+        
+        var isValid = true;
+        isValid = documentDatta != null;
+        
+        if (documentDatta.Size > 10000000)
+        {
+            return ProcessingResult.Failed("File to large");
+        }
+        
+        await SaveDocumentAsync(documentDatta, options.UserId);
+        await _documentRepository.UpdateDocumentStatusAsync(documentId, DocumentStatus.Processed);
+
+        return ProcessingResult.Success(DateTime.Now);
+    }
+    catch (Exception ex)
+    {
+        // Rest of the method...
 
         private async Task<DocumentData> FetchDocumentDataAsync(string documentId, ProcessingOptions options)
         {
