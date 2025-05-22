@@ -15,7 +15,8 @@ def load_standards(file_name: str) -> str:
 clean_code = load_standards("clean_code_standards.md")
 angular_code = load_standards("angular_code_standards.md")
 csharp_code = load_standards("csharp_code_standards.md")
-combined_standards = f"{clean_code}\n\n{angular_code}\n\n{csharp_code}"
+api_code = load_standards("api_standards.md")
+combined_standards = f"{clean_code}\n\n{angular_code}\n\n{csharp_code}\n\n{api_code}"
 
 load_dotenv()
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
