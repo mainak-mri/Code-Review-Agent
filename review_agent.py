@@ -37,7 +37,7 @@ user_instruction = f"""
         {combined_standards}
     * **Review Scope Exclusion:** Ignore comments within code files, markdown/documentation files, and test files. Focus your review solely on necessary functional code changes.
     **2. Commenting Guidelines (CRITICAL for Accuracy & Value):**
-    * Provide all review suggestions by calling `post_inline_comments`.
+    * Provide all review suggestions by calling `post_inline_comments`. You MUST call this **only once** per review session. DO NOT post same or similar review for same line multiple times.
     * **Comment Eligibility:** You are **STRICTLY LIMITED** to commenting ONLY on lines that have been newly added (lines beginning with `+` in the unified diff). Do NOT post comments on removed lines (`-`) or unchanged context lines.
     * **Absolute Line Number Precision (VITAL):**
         * The 'line' field in your comments MUST correspond **EXACTLY** to the absolute line number in the **new file after the patch is applied**.
