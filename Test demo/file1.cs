@@ -32,7 +32,7 @@ namespace MyApp.Api.Controllers
         public async Task<IActionResult> GetVouchersAsync([FromQuery] VoucherSearchCriteria criteria)
         {
             _logger.LogInformation($"User {User.Identity.Name} retrieving vouchers");
-            
+
             var result = await _voucherService.GetVouchersAsync(criteria);
             return Ok(result);
         }
@@ -43,12 +43,12 @@ namespace MyApp.Api.Controllers
         public async Task<IActionResult> GetVoucherByIdAsync([FromRoute] int id)
         {
             var voucher = await _voucherService.GetVoucherByIdAsync(id);
-            
+
             if (voucher == null)
             {
                 return NotFound();
             }
-            
+
             return Ok(voucher);
         }
 
@@ -73,7 +73,7 @@ namespace MyApp.Api.Controllers
             }
         }
 
-        [HttpPut("{id}")]
+        [HttpGet("{id}")]
         [ProducesResponseType(StatusCodes.Status204NoContent)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -99,6 +99,23 @@ namespace MyApp.Api.Controllers
             {
                 return BadRequest(ex.Message);
             }
+        }
+
+        [HttpGet]
+        [Route("api/GetAllAvailableVouchers")]
+        public List<VoucherDto> GetAll()
+        {
+            var vouchers = _voucherService.GetAllVouchers();
+
+            return vouchers;
+        }
+        
+        [HttpPost]
+        [Route("addNewVoucher")]
+        public IActionResult AddVoucher([FromBody] dynamic voucherData)
+        {
+            int id = _voucherService.SaveVoucher(voucherData);
+            return Created($"/api/vouchers/{id}", new { Success = true, ID = id });
         }
     }
 }
